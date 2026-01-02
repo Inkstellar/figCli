@@ -1,0 +1,33 @@
+{
+  "name": "figcli",
+  "version": "1.0.0",
+  "description": "A powerful CLI tool for GitHub API interactions built with TypeScript",
+  "main": "dist/index.js",
+  "bin": {
+    "figcli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "cli",
+    "github",
+    "typescript",
+    "github-api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "@types/node-fetch": "^2.6.13",
+    "@types/ora": "^3.1.0",
+    "commander": "^14.0.2",
+    "node-fetch": "^3.3.2",
+    "ora": "^9.0.0"
+  }
+}
