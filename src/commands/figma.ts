@@ -1,6 +1,10 @@
 import { Command } from 'commander';
 import fetch, { Response } from 'node-fetch';
 import ora from 'ora';
+import { promises as fs } from 'fs';
+import * as path from 'path';
+import { input, select } from '@inquirer/prompts';
+import { generateReactComponent } from '../utils/figmaToReact';
 
 interface FigmaNode {
     id: string;
@@ -77,8 +81,10 @@ export function loadCommands(program: Command) {
         .command('frame')
         .description('Get detailed metadata for a specific frame')
         .argument('<file-key>', 'Figma file key')
-        .argument('<frame-id>', 'Frame node ID')
+        .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
         .action(async (fileKey: string, frameId: string) => {
+            // Convert hyphenated node IDs (from URLs) to colon format (for API)
+            const apiFrameId = frameId.replace(/-/g, ':');
             const figmaToken = process.env.FIGMA_TOKEN;
             
             if (!figmaToken) {
@@ -92,8 +98,13 @@ export function loadCommands(program: Command) {
             const spinner = ora(`Fetching frame details from Figma...`).start();
 
             try {
-                const data: any = await figmaApiRequest(`https://api.figma.com/v1/files/${fileKey}/nodes?ids=${frameId}`, figmaToken, spinner);
-                const frame = data.nodes[frameId]?.document;
+                // Request with depth and geometry parameters to get full component details
+                const data: any = await figmaApiRequest(
+                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, 
+                    figmaToken, 
+                    spinner
+                );
+                const frame = data.nodes[apiFrameId]?.document;
 
                 spinner.succeed('Frame details fetched successfully!');
 
@@ -102,32 +113,121 @@ export function loadCommands(program: Command) {
                     process.exit(1);
                 }
 
-                console.log(`\nFrame Details: ${frame.name}`);
-                console.log(`ID: ${frame.id}`);
-                console.log(`Type: ${frame.type}`);
-                
-                if (frame.absoluteBoundingBox) {
-                    console.log(`Position: (${frame.absoluteBoundingBox.x}, ${frame.absoluteBoundingBox.y})`);
-                    console.log(`Size: ${frame.absoluteBoundingBox.width} x ${frame.absoluteBoundingBox.height}`);
-                }
-
-                if (frame.backgroundColor) {
-                    console.log(`Background Color: ${JSON.stringify(frame.backgroundColor)}`);
-                }
-
-                if (frame.styles) {
-                    console.log('Styles:', JSON.stringify(frame.styles, null, 2));
-                }
-
-                if (frame.children && frame.children.length > 0) {
-                    console.log(`\nContains ${frame.children.length} child element(s):`);
-                    frame.children.forEach((child: FigmaNode, index: number) => {
-                        console.log(`  ${index + 1}. ${child.name} (${child.type})`);
-                    });
-                }
+                // Output complete JSON of the frame
+                console.log(JSON.stringify(frame, null, 2));
 
             } catch (error) {
                 spinner.fail('Failed to fetch frame details');
+                console.error('Error:', error instanceof Error ? error.message : String(error));
+                process.exit(1);
+            }
+        });
+
+    figmaCommand
+        .command('to-react')
+        .description('Convert a Figma frame to a React component')
+        .argument('<file-key>', 'Figma file key')
+        .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
+        .option('-o, --output <path>', 'Output file path for the React component')
+        .action(async (fileKey: string, frameId: string, options: { output?: string }) => {
+            // Convert hyphenated node IDs (from URLs) to colon format (for API)
+            const apiFrameId = frameId.replace(/-/g, ':');
+            const figmaToken = process.env.FIGMA_TOKEN;
+            
+            if (!figmaToken) {
+                console.error('Error: FIGMA_TOKEN environment variable is not set.');
+                console.error('Please set your Figma personal access token as FIGMA_TOKEN environment variable.');
+                process.exit(1);
+            }
+
+            const spinner = ora(`Fetching frame from Figma...`).start();
+
+            try {
+                // Request with depth and geometry parameters to get full component details
+                const data: any = await figmaApiRequest(
+                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, 
+                    figmaToken, 
+                    spinner
+                );
+                const frame = data.nodes[apiFrameId]?.document;
+
+                if (!frame) {
+                    spinner.fail('Frame not found in the specified file.');
+                    process.exit(1);
+                }
+
+                spinner.succeed('Frame fetched successfully!');
+                console.log('');
+
+                // Interactive prompts
+                console.log('\x1b[1m\x1b[36m📋 Component Configuration\x1b[0m\n');
+
+                // Step 1: Select framework
+                const framework = await select({
+                    message: '\x1b[1mStep 1/3:\x1b[0m Select component framework:',
+                    choices: [
+                        { name: 'MUI (TypeScript)', value: 'mui-tsx' },
+                        { name: 'MUI (JavaScript)', value: 'mui-jsx' },
+                        { name: 'Vanilla JSX', value: 'vanilla-jsx' },
+                        { name: 'Styled Components', value: 'styled-components' }
+                    ],
+                    default: 'mui-tsx'
+                });
+
+                // Step 2: Get component name
+                const componentName = await input({
+                    message: '\x1b[1mStep 2/3:\x1b[0m Enter component name:',
+                    default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
+                    validate: (inputValue: string) => {
+                        if (!inputValue.trim()) {
+                            return 'Component name cannot be empty';
+                        }
+                        if (!/^[A-Z]/.test(inputValue)) {
+                            return 'Component name must start with an uppercase letter';
+                        }
+                        if (!/^[A-Za-z0-9]+$/.test(inputValue)) {
+                            return 'Component name can only contain letters and numbers';
+                        }
+                        return true;
+                    }
+                });
+
+                // Step 3: Get additional prompt (optional)
+                const additionalPrompt = await input({
+                    message: '\x1b[1mStep 3/3:\x1b[0m Additional instructions (optional):',
+                    default: ''
+                });
+
+                console.log('');
+                const generatingSpinner = ora('Generating React component...').start();
+
+                // Generate React component code with user preferences
+                const componentCode = generateReactComponent(
+                    frame, 
+                    framework,
+                    componentName,
+                    additionalPrompt
+                );
+
+                // Determine output path
+                let outputPath: string;
+                if (options.output) {
+                    outputPath = path.resolve(options.output);
+                } else {
+                    const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
+                    outputPath = path.resolve(`./${componentName}.${extension}`);
+                }
+
+                // Write to file
+                await fs.writeFile(outputPath, componentCode, 'utf-8');
+
+                generatingSpinner.succeed('React component generated successfully!');
+                console.log(`\n\x1b[32m✓\x1b[0m Component saved to: \x1b[36m${outputPath}\x1b[0m`);
+                console.log(`\x1b[32m✓\x1b[0m Framework: \x1b[36m${framework}\x1b[0m`);
+                console.log(`\x1b[32m✓\x1b[0m Component name: \x1b[36m${componentName}\x1b[0m`);
+
+            } catch (error) {
+                spinner.fail('Failed to generate React component');
                 console.error('Error:', error instanceof Error ? error.message : String(error));
                 process.exit(1);
             }

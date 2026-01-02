@@ -9,7 +9,7 @@ program
     .description('A powerful CLI tool built with TypeScript')
     .version('1.0.0');
 
-loadGithubCommands(program);
+// loadGithubCommands(program);
 loadFigmaCommands(program);
 
 program.parse(process.argv);

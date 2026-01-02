@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -6,6 +39,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadCommands = loadCommands;
 const node_fetch_1 = __importDefault(require("node-fetch"));
 const ora_1 = __importDefault(require("ora"));
+const fs_1 = require("fs");
+const path = __importStar(require("path"));
+const prompts_1 = require("@inquirer/prompts");
+const figmaToReact_1 = require("../utils/figmaToReact");
 function loadCommands(program) {
     const figmaCommand = program
         .command('figma')
@@ -57,9 +94,11 @@ function loadCommands(program) {
         .command('frame')
         .description('Get detailed metadata for a specific frame')
         .argument('<file-key>', 'Figma file key')
-        .argument('<frame-id>', 'Frame node ID')
+        .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
         .action(async (fileKey, frameId) => {
         var _a;
+        // Convert hyphenated node IDs (from URLs) to colon format (for API)
+        const apiFrameId = frameId.replace(/-/g, ':');
         const figmaToken = process.env.FIGMA_TOKEN;
         if (!figmaToken) {
             console.error('Error: FIGMA_TOKEN environment variable is not set.');
@@ -70,35 +109,107 @@ function loadCommands(program) {
         }
         const spinner = (0, ora_1.default)(`Fetching frame details from Figma...`).start();
         try {
-            const data = await figmaApiRequest(`https://api.figma.com/v1/files/${fileKey}/nodes?ids=${frameId}`, figmaToken, spinner);
-            const frame = (_a = data.nodes[frameId]) === null || _a === void 0 ? void 0 : _a.document;
+            // Request with depth and geometry parameters to get full component details
+            const data = await figmaApiRequest(`https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, figmaToken, spinner);
+            const frame = (_a = data.nodes[apiFrameId]) === null || _a === void 0 ? void 0 : _a.document;
             spinner.succeed('Frame details fetched successfully!');
             if (!frame) {
                 console.error('Error: Frame not found in the specified file.');
                 process.exit(1);
             }
-            console.log(`\nFrame Details: ${frame.name}`);
-            console.log(`ID: ${frame.id}`);
-            console.log(`Type: ${frame.type}`);
-            if (frame.absoluteBoundingBox) {
-                console.log(`Position: (${frame.absoluteBoundingBox.x}, ${frame.absoluteBoundingBox.y})`);
-                console.log(`Size: ${frame.absoluteBoundingBox.width} x ${frame.absoluteBoundingBox.height}`);
-            }
-            if (frame.backgroundColor) {
-                console.log(`Background Color: ${JSON.stringify(frame.backgroundColor)}`);
-            }
-            if (frame.styles) {
-                console.log('Styles:', JSON.stringify(frame.styles, null, 2));
-            }
-            if (frame.children && frame.children.length > 0) {
-                console.log(`\nContains ${frame.children.length} child element(s):`);
-                frame.children.forEach((child, index) => {
-                    console.log(`  ${index + 1}. ${child.name} (${child.type})`);
-                });
-            }
+            // Output complete JSON of the frame
+            console.log(JSON.stringify(frame, null, 2));
         }
         catch (error) {
             spinner.fail('Failed to fetch frame details');
+            console.error('Error:', error instanceof Error ? error.message : String(error));
+            process.exit(1);
+        }
+    });
+    figmaCommand
+        .command('to-react')
+        .description('Convert a Figma frame to a React component')
+        .argument('<file-key>', 'Figma file key')
+        .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
+        .option('-o, --output <path>', 'Output file path for the React component')
+        .action(async (fileKey, frameId, options) => {
+        var _a;
+        // Convert hyphenated node IDs (from URLs) to colon format (for API)
+        const apiFrameId = frameId.replace(/-/g, ':');
+        const figmaToken = process.env.FIGMA_TOKEN;
+        if (!figmaToken) {
+            console.error('Error: FIGMA_TOKEN environment variable is not set.');
+            console.error('Please set your Figma personal access token as FIGMA_TOKEN environment variable.');
+            process.exit(1);
+        }
+        const spinner = (0, ora_1.default)(`Fetching frame from Figma...`).start();
+        try {
+            // Request with depth and geometry parameters to get full component details
+            const data = await figmaApiRequest(`https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, figmaToken, spinner);
+            const frame = (_a = data.nodes[apiFrameId]) === null || _a === void 0 ? void 0 : _a.document;
+            if (!frame) {
+                spinner.fail('Frame not found in the specified file.');
+                process.exit(1);
+            }
+            spinner.succeed('Frame fetched successfully!');
+            console.log('');
+            // Interactive prompts
+            console.log('\x1b[1m\x1b[36m📋 Component Configuration\x1b[0m\n');
+            // Step 1: Select framework
+            const framework = await (0, prompts_1.select)({
+                message: '\x1b[1mStep 1/3:\x1b[0m Select component framework:',
+                choices: [
+                    { name: 'MUI (TypeScript)', value: 'mui-tsx' },
+                    { name: 'MUI (JavaScript)', value: 'mui-jsx' },
+                    { name: 'Vanilla JSX', value: 'vanilla-jsx' },
+                    { name: 'Styled Components', value: 'styled-components' }
+                ],
+                default: 'mui-tsx'
+            });
+            // Step 2: Get component name
+            const componentName = await (0, prompts_1.input)({
+                message: '\x1b[1mStep 2/3:\x1b[0m Enter component name:',
+                default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
+                validate: (inputValue) => {
+                    if (!inputValue.trim()) {
+                        return 'Component name cannot be empty';
+                    }
+                    if (!/^[A-Z]/.test(inputValue)) {
+                        return 'Component name must start with an uppercase letter';
+                    }
+                    if (!/^[A-Za-z0-9]+$/.test(inputValue)) {
+                        return 'Component name can only contain letters and numbers';
+                    }
+                    return true;
+                }
+            });
+            // Step 3: Get additional prompt (optional)
+            const additionalPrompt = await (0, prompts_1.input)({
+                message: '\x1b[1mStep 3/3:\x1b[0m Additional instructions (optional):',
+                default: ''
+            });
+            console.log('');
+            const generatingSpinner = (0, ora_1.default)('Generating React component...').start();
+            // Generate React component code with user preferences
+            const componentCode = (0, figmaToReact_1.generateReactComponent)(frame, framework, componentName, additionalPrompt);
+            // Determine output path
+            let outputPath;
+            if (options.output) {
+                outputPath = path.resolve(options.output);
+            }
+            else {
+                const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
+                outputPath = path.resolve(`./${componentName}.${extension}`);
+            }
+            // Write to file
+            await fs_1.promises.writeFile(outputPath, componentCode, 'utf-8');
+            generatingSpinner.succeed('React component generated successfully!');
+            console.log(`\n\x1b[32m✓\x1b[0m Component saved to: \x1b[36m${outputPath}\x1b[0m`);
+            console.log(`\x1b[32m✓\x1b[0m Framework: \x1b[36m${framework}\x1b[0m`);
+            console.log(`\x1b[32m✓\x1b[0m Component name: \x1b[36m${componentName}\x1b[0m`);
+        }
+        catch (error) {
+            spinner.fail('Failed to generate React component');
             console.error('Error:', error instanceof Error ? error.message : String(error));
             process.exit(1);
         }
