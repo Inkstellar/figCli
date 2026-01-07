@@ -44,6 +44,7 @@ const path = __importStar(require("path"));
 const prompts_1 = require("@inquirer/prompts");
 const figlet_1 = __importDefault(require("figlet"));
 const figmaToReact_1 = require("../utils/figmaToReact");
+const config_1 = require("../utils/config");
 function parseFigmaUrl(url) {
     try {
         // Handle both design and file URLs
@@ -65,6 +66,30 @@ function loadCommands(program) {
     const figmaCommand = program
         .command('figma')
         .description('Interact with the Figma API');
+    // Command to choose and persist a default AI model
+    figmaCommand
+        .command('choose-model')
+        .description('Select and save the default AI model used for generation')
+        .action(async () => {
+        console.log('│');
+        const current = await (0, config_1.getSelectedModel)();
+        if (current) {
+            console.log('◇  Current model: ' + current);
+            console.log('│');
+        }
+        const chosen = await (0, prompts_1.select)({
+            message: '◇  Select AI model:',
+            choices: [
+                { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
+                { name: 'GPT-4o', value: 'gpt-4o' }
+            ],
+            default: 'gpt-4.5o'
+        });
+        console.log('│  ' + chosen);
+        console.log('│');
+        await (0, config_1.setSelectedModel)(chosen);
+        console.log('└  Saved. Default model set to ' + chosen + '\n');
+    });
     figmaCommand
         .command('frames')
         .description('List all frames in a Figma file')
@@ -150,7 +175,7 @@ function loadCommands(program) {
         .argument('<figma-url>', 'Figma design URL (wrap in quotes: "https://www.figma.com/design/...?node-id=7-16&...")')
         .option('-o, --output <path>', 'Output file path for the React component')
         .action(async (figmaUrl, options) => {
-        var _a;
+        var _a, _b;
         // Display welcome message
         const welcomeText = figlet_1.default.textSync('FEFI Cascade 2.0', {
             font: 'slant',
@@ -203,18 +228,11 @@ function loadCommands(program) {
             });
             console.log('│  ' + framework);
             console.log('│');
-            // Step 2: Select AI model
-            const aiModel = await (0, prompts_1.select)({
-                message: '◇  Select AI model:',
-                choices: [
-                    { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
-                    { name: 'GPT-4o', value: 'gpt-4o' }
-                ],
-                default: 'gpt-4.5o'
-            });
-            console.log('│  ' + aiModel);
+            // Determine AI model (persisted or default latest)
+            const aiModel = (_b = (await (0, config_1.getSelectedModel)())) !== null && _b !== void 0 ? _b : 'gpt-4.5o';
+            console.log('◇  Using AI model: ' + aiModel);
             console.log('│');
-            // Step 3: Get component name
+            // Step 2: Get component name
             const componentName = await (0, prompts_1.input)({
                 message: '◇  Component name:',
                 default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
@@ -233,7 +251,7 @@ function loadCommands(program) {
             });
             console.log('│  ' + componentName);
             console.log('│');
-            // Step 4: Get additional prompt (optional)
+            // Step 3: Get additional prompt (optional)
             const additionalPrompt = await (0, prompts_1.input)({
                 message: '◇  Additional instructions (optional):',
                 default: ''
@@ -243,7 +261,7 @@ function loadCommands(program) {
             // Determine file extension based on framework
             const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
             const defaultPath = `./src/components/${componentName}.${extension}`;
-            // Step 5: Get output path (optional)
+            // Step 4: Get output path (optional)
             const outputPathInput = await (0, prompts_1.input)({
                 message: '◇  Output path:',
                 default: defaultPath

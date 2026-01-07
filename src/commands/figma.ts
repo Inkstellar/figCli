@@ -6,6 +6,7 @@ import * as path from 'path';
 import { input, select } from '@inquirer/prompts';
 import figlet from 'figlet';
 import { generateReactComponent, generateReactComponentWithAI } from '../utils/figmaToReact';
+import { getSelectedModel, setSelectedModel } from '../utils/config';
 
 interface FigmaNode {
     id: string;
@@ -46,6 +47,33 @@ export function loadCommands(program: Command) {
     const figmaCommand = program
         .command('figma')
         .description('Interact with the Figma API');
+
+    // Command to choose and persist a default AI model
+    figmaCommand
+        .command('choose-model')
+        .description('Select and save the default AI model used for generation')
+        .action(async () => {
+            console.log('│');
+            const current = await getSelectedModel();
+            if (current) {
+                console.log('◇  Current model: ' + current);
+                console.log('│');
+            }
+
+            const chosen = await select({
+                message: '◇  Select AI model:',
+                choices: [
+                    { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
+                    { name: 'GPT-4o', value: 'gpt-4o' }
+                ],
+                default: 'gpt-4.5o'
+            });
+            console.log('│  ' + chosen);
+            console.log('│');
+
+            await setSelectedModel(chosen);
+            console.log('└  Saved. Default model set to ' + chosen + '\n');
+        });
 
     figmaCommand
         .command('frames')
@@ -217,19 +245,12 @@ export function loadCommands(program: Command) {
                 console.log('│  ' + framework);
                 console.log('│');
 
-                // Step 2: Select AI model
-                const aiModel = await select({
-                    message: '◇  Select AI model:',
-                    choices: [
-                        { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
-                        { name: 'GPT-4o', value: 'gpt-4o' }
-                    ],
-                    default: 'gpt-4.5o'
-                });
-                console.log('│  ' + aiModel);
+                // Determine AI model (persisted or default latest)
+                const aiModel = (await getSelectedModel()) ?? 'gpt-4.5o';
+                console.log('◇  Using AI model: ' + aiModel);
                 console.log('│');
 
-                // Step 3: Get component name
+                // Step 2: Get component name
                 const componentName = await input({
                     message: '◇  Component name:',
                     default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
@@ -249,7 +270,7 @@ export function loadCommands(program: Command) {
                 console.log('│  ' + componentName);
                 console.log('│');
 
-                // Step 4: Get additional prompt (optional)
+                // Step 3: Get additional prompt (optional)
                 const additionalPrompt = await input({
                     message: '◇  Additional instructions (optional):',
                     default: ''
@@ -261,7 +282,7 @@ export function loadCommands(program: Command) {
                 const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
                 const defaultPath = `./src/components/${componentName}.${extension}`;
 
-                // Step 5: Get output path (optional)
+                // Step 4: Get output path (optional)
                 const outputPathInput = await input({
                     message: '◇  Output path:',
                     default: defaultPath
