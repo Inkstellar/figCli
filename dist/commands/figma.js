@@ -44,6 +44,23 @@ const path = __importStar(require("path"));
 const prompts_1 = require("@inquirer/prompts");
 const figlet_1 = __importDefault(require("figlet"));
 const figmaToReact_1 = require("../utils/figmaToReact");
+function parseFigmaUrl(url) {
+    try {
+        // Handle both design and file URLs
+        // https://www.figma.com/design/FILE_KEY/...?node-id=7-16
+        // https://www.figma.com/file/FILE_KEY/...?node-id=7-16
+        const urlObj = new URL(url);
+        // Extract file key from path
+        const pathMatch = urlObj.pathname.match(/\/(design|file)\/([a-zA-Z0-9]+)/);
+        const fileKey = pathMatch ? pathMatch[2] : null;
+        // Extract node-id from query parameters
+        const nodeId = urlObj.searchParams.get('node-id');
+        return { fileKey, nodeId };
+    }
+    catch (error) {
+        return { fileKey: null, nodeId: null };
+    }
+}
 function loadCommands(program) {
     const figmaCommand = program
         .command('figma')
@@ -129,11 +146,10 @@ function loadCommands(program) {
     });
     figmaCommand
         .command('to-react')
-        .description('Convert a Figma frame to a React component')
-        .argument('<file-key>', 'Figma file key')
-        .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
+        .description('Convert a Figma frame to a React component. Note: Wrap URL in quotes on PowerShell.')
+        .argument('<figma-url>', 'Figma design URL (wrap in quotes: "https://www.figma.com/design/...?node-id=7-16&...")')
         .option('-o, --output <path>', 'Output file path for the React component')
-        .action(async (fileKey, frameId, options) => {
+        .action(async (figmaUrl, options) => {
         var _a;
         // Display welcome message
         const welcomeText = figlet_1.default.textSync('FEFI Cascade 2.0', {
@@ -142,8 +158,15 @@ function loadCommands(program) {
         });
         console.log('\x1b[36m' + welcomeText + '\x1b[0m');
         console.log('');
+        // Parse Figma URL to extract file key and node ID
+        const { fileKey, nodeId } = parseFigmaUrl(figmaUrl);
+        if (!fileKey || !nodeId) {
+            console.error('Error: Invalid Figma URL. Please provide a valid Figma design URL with node-id parameter.');
+            console.error('Example: https://www.figma.com/design/FILE_KEY/...?node-id=7-16');
+            process.exit(1);
+        }
         // Convert hyphenated node IDs (from URLs) to colon format (for API)
-        const apiFrameId = frameId.replace(/-/g, ':');
+        const apiFrameId = nodeId.replace(/-/g, ':');
         const figmaToken = process.env.FIGMA_TOKEN;
         if (!figmaToken) {
             console.error('Error: FIGMA_TOKEN environment variable is not set.');
