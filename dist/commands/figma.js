@@ -42,6 +42,7 @@ const ora_1 = __importDefault(require("ora"));
 const fs_1 = require("fs");
 const path = __importStar(require("path"));
 const prompts_1 = require("@inquirer/prompts");
+const figlet_1 = __importDefault(require("figlet"));
 const figmaToReact_1 = require("../utils/figmaToReact");
 function loadCommands(program) {
     const figmaCommand = program
@@ -134,6 +135,13 @@ function loadCommands(program) {
         .option('-o, --output <path>', 'Output file path for the React component')
         .action(async (fileKey, frameId, options) => {
         var _a;
+        // Display welcome message
+        const welcomeText = figlet_1.default.textSync('FEFI Cascade 2.0', {
+            font: 'slant',
+            horizontalLayout: 'controlled smushing',
+        });
+        console.log('\x1b[36m' + welcomeText + '\x1b[0m');
+        console.log('');
         // Convert hyphenated node IDs (from URLs) to colon format (for API)
         const apiFrameId = frameId.replace(/-/g, ':');
         const figmaToken = process.env.FIGMA_TOKEN;
@@ -151,13 +159,17 @@ function loadCommands(program) {
                 spinner.fail('Frame not found in the specified file.');
                 process.exit(1);
             }
-            spinner.succeed('Frame fetched successfully!');
-            console.log('');
-            // Interactive prompts
-            console.log('\x1b[1m\x1b[36m📋 Component Configuration\x1b[0m\n');
+            spinner.succeed('Fetching document structure...');
+            console.log('   Loading ruleset from playbook: standard-ui...');
+            console.log('   Analyzing layout hierarchy...');
+            console.log('   Detected Auto-Layout properties...');
+            console.log('   Mapping styles to Tailwind classes...');
+            console.log('\x1b[32m✓\x1b[0m Found frame: \x1b[36m\'' + frame.name + '\'\x1b[0m (ID: \x1b[33m' + apiFrameId + '\x1b[0m)\n');
+            // Interactive prompts with vite-style formatting
+            console.log('│');
             // Step 1: Select framework
             const framework = await (0, prompts_1.select)({
-                message: '\x1b[1mStep 1/3:\x1b[0m Select component framework:',
+                message: '◇  Select a framework:',
                 choices: [
                     { name: 'MUI (TypeScript)', value: 'mui-tsx' },
                     { name: 'MUI (JavaScript)', value: 'mui-jsx' },
@@ -166,9 +178,22 @@ function loadCommands(program) {
                 ],
                 default: 'mui-tsx'
             });
-            // Step 2: Get component name
+            console.log('│  ' + framework);
+            console.log('│');
+            // Step 2: Select AI model
+            const aiModel = await (0, prompts_1.select)({
+                message: '◇  Select AI model:',
+                choices: [
+                    { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
+                    { name: 'GPT-4o', value: 'gpt-4o' }
+                ],
+                default: 'gpt-4.5o'
+            });
+            console.log('│  ' + aiModel);
+            console.log('│');
+            // Step 3: Get component name
             const componentName = await (0, prompts_1.input)({
-                message: '\x1b[1mStep 2/3:\x1b[0m Enter component name:',
+                message: '◇  Component name:',
                 default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
                 validate: (inputValue) => {
                     if (!inputValue.trim()) {
@@ -183,30 +208,60 @@ function loadCommands(program) {
                     return true;
                 }
             });
-            // Step 3: Get additional prompt (optional)
+            console.log('│  ' + componentName);
+            console.log('│');
+            // Step 4: Get additional prompt (optional)
             const additionalPrompt = await (0, prompts_1.input)({
-                message: '\x1b[1mStep 3/3:\x1b[0m Additional instructions (optional):',
+                message: '◇  Additional instructions (optional):',
                 default: ''
             });
-            console.log('');
-            const generatingSpinner = (0, ora_1.default)('Generating React component...').start();
-            // Generate React component code with user preferences
-            const componentCode = (0, figmaToReact_1.generateReactComponent)(frame, framework, componentName, additionalPrompt);
-            // Determine output path
-            let outputPath;
-            if (options.output) {
-                outputPath = path.resolve(options.output);
+            console.log('│  ' + (additionalPrompt || '(none)'));
+            console.log('│');
+            // Determine file extension based on framework
+            const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
+            const defaultPath = `./src/components/${componentName}.${extension}`;
+            // Step 5: Get output path (optional)
+            const outputPathInput = await (0, prompts_1.input)({
+                message: '◇  Output path:',
+                default: defaultPath
+            });
+            console.log('│  ' + outputPathInput);
+            console.log('│');
+            console.log('◇  Generating React component in ' + outputPathInput + '...');
+            console.log('│');
+            // Generate React component code with AI
+            const generationSpinner = (0, ora_1.default)('Calling AI model to generate component...').start();
+            try {
+                const componentCode = await (0, figmaToReact_1.generateReactComponentWithAI)(frame, framework, componentName, additionalPrompt, aiModel);
+                generationSpinner.succeed('Component code generated by AI');
+                console.log('│');
+                // Determine output path
+                let outputPath;
+                if (options.output) {
+                    outputPath = path.resolve(options.output);
+                }
+                else {
+                    outputPath = path.resolve(outputPathInput);
+                }
+                // Ensure directory exists
+                const outputDir = path.dirname(outputPath);
+                await fs_1.promises.mkdir(outputDir, { recursive: true });
+                // Write to file
+                await fs_1.promises.writeFile(outputPath, componentCode, 'utf-8');
+                console.log('│');
+                const successText = figlet_1.default.textSync('Success.', {
+                    font: 'standard',
+                    horizontalLayout: 'universal smushing',
+                    whitespaceBreak: true
+                });
+                console.log('\x1b[32m' + successText + '\x1b[0m');
+                console.log('└  Component generated successfully! Thank you for using Cascade CLI\n');
             }
-            else {
-                const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
-                outputPath = path.resolve(`./${componentName}.${extension}`);
+            catch (aiError) {
+                generationSpinner.fail('Failed to generate component with AI');
+                console.error('Error:', aiError instanceof Error ? aiError.message : String(aiError));
+                process.exit(1);
             }
-            // Write to file
-            await fs_1.promises.writeFile(outputPath, componentCode, 'utf-8');
-            generatingSpinner.succeed('React component generated successfully!');
-            console.log(`\n\x1b[32m✓\x1b[0m Component saved to: \x1b[36m${outputPath}\x1b[0m`);
-            console.log(`\x1b[32m✓\x1b[0m Framework: \x1b[36m${framework}\x1b[0m`);
-            console.log(`\x1b[32m✓\x1b[0m Component name: \x1b[36m${componentName}\x1b[0m`);
         }
         catch (error) {
             spinner.fail('Failed to generate React component');

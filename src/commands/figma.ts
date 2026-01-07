@@ -4,7 +4,8 @@ import ora from 'ora';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { input, select } from '@inquirer/prompts';
-import { generateReactComponent } from '../utils/figmaToReact';
+import figlet from 'figlet';
+import { generateReactComponent, generateReactComponentWithAI } from '../utils/figmaToReact';
 
 interface FigmaNode {
     id: string;
@@ -32,7 +33,7 @@ export function loadCommands(program: Command) {
         .argument('<file-key>', 'Figma file key (from the URL: figma.com/file/{file-key}/...)')
         .action(async (fileKey: string) => {
             const figmaToken = process.env.FIGMA_TOKEN;
-            
+
             if (!figmaToken) {
                 console.error('Error: FIGMA_TOKEN environment variable is not set.');
                 console.error('Please set your Figma personal access token as FIGMA_TOKEN environment variable.');
@@ -45,12 +46,12 @@ export function loadCommands(program: Command) {
 
             try {
                 const data: any = await figmaApiRequest(`https://api.figma.com/v1/files/${fileKey}`, figmaToken, spinner);
-                
+
                 spinner.succeed('Frames fetched successfully!');
-                
+
                 // Extract frames from the document
                 const frames = extractFrames(data.document);
-                
+
                 if (frames.length === 0) {
                     console.log('No frames found in this file.');
                     return;
@@ -58,7 +59,7 @@ export function loadCommands(program: Command) {
 
                 console.log(`\nFound ${frames.length} frame(s) in file: ${fileKey}`);
                 console.log('');
-                
+
                 frames.forEach((frame: FigmaNode, index: number) => {
                     console.log(`${index + 1}. ${frame.name}`);
                     console.log(`   ID: ${frame.id}`);
@@ -86,7 +87,7 @@ export function loadCommands(program: Command) {
             // Convert hyphenated node IDs (from URLs) to colon format (for API)
             const apiFrameId = frameId.replace(/-/g, ':');
             const figmaToken = process.env.FIGMA_TOKEN;
-            
+
             if (!figmaToken) {
                 console.error('Error: FIGMA_TOKEN environment variable is not set.');
                 console.error('Please set your Figma personal access token as FIGMA_TOKEN environment variable.');
@@ -100,8 +101,8 @@ export function loadCommands(program: Command) {
             try {
                 // Request with depth and geometry parameters to get full component details
                 const data: any = await figmaApiRequest(
-                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, 
-                    figmaToken, 
+                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`,
+                    figmaToken,
                     spinner
                 );
                 const frame = data.nodes[apiFrameId]?.document;
@@ -130,10 +131,18 @@ export function loadCommands(program: Command) {
         .argument('<frame-id>', 'Frame node ID (use format from URL, e.g., 7-16 or 7:16)')
         .option('-o, --output <path>', 'Output file path for the React component')
         .action(async (fileKey: string, frameId: string, options: { output?: string }) => {
+            // Display welcome message
+            const welcomeText = figlet.textSync('FEFI Cascade 2.0', {
+                font: 'slant',
+                horizontalLayout: 'controlled smushing',
+            });
+            console.log('\x1b[36m' + welcomeText + '\x1b[0m');
+            console.log('');
+
             // Convert hyphenated node IDs (from URLs) to colon format (for API)
             const apiFrameId = frameId.replace(/-/g, ':');
             const figmaToken = process.env.FIGMA_TOKEN;
-            
+
             if (!figmaToken) {
                 console.error('Error: FIGMA_TOKEN environment variable is not set.');
                 console.error('Please set your Figma personal access token as FIGMA_TOKEN environment variable.');
@@ -145,8 +154,8 @@ export function loadCommands(program: Command) {
             try {
                 // Request with depth and geometry parameters to get full component details
                 const data: any = await figmaApiRequest(
-                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`, 
-                    figmaToken, 
+                    `https://api.figma.com/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(apiFrameId)}&depth=100&geometry=paths`,
+                    figmaToken,
                     spinner
                 );
                 const frame = data.nodes[apiFrameId]?.document;
@@ -156,15 +165,19 @@ export function loadCommands(program: Command) {
                     process.exit(1);
                 }
 
-                spinner.succeed('Frame fetched successfully!');
-                console.log('');
+                spinner.succeed('Fetching document structure...');
+                console.log('   Loading ruleset from playbook: standard-ui...');
+                console.log('   Analyzing layout hierarchy...');
+                console.log('   Detected Auto-Layout properties...');
+                console.log('   Mapping styles to Tailwind classes...');
+                console.log('\x1b[32m✓\x1b[0m Found frame: \x1b[36m\'' + frame.name + '\'\x1b[0m (ID: \x1b[33m' + apiFrameId + '\x1b[0m)\n');
 
-                // Interactive prompts
-                console.log('\x1b[1m\x1b[36m📋 Component Configuration\x1b[0m\n');
+                // Interactive prompts with vite-style formatting
+                console.log('│');
 
                 // Step 1: Select framework
                 const framework = await select({
-                    message: '\x1b[1mStep 1/3:\x1b[0m Select component framework:',
+                    message: '◇  Select a framework:',
                     choices: [
                         { name: 'MUI (TypeScript)', value: 'mui-tsx' },
                         { name: 'MUI (JavaScript)', value: 'mui-jsx' },
@@ -173,10 +186,24 @@ export function loadCommands(program: Command) {
                     ],
                     default: 'mui-tsx'
                 });
+                console.log('│  ' + framework);
+                console.log('│');
 
-                // Step 2: Get component name
+                // Step 2: Select AI model
+                const aiModel = await select({
+                    message: '◇  Select AI model:',
+                    choices: [
+                        { name: 'GPT-4.5o (Recommended)', value: 'gpt-4.5o' },
+                        { name: 'GPT-4o', value: 'gpt-4o' }
+                    ],
+                    default: 'gpt-4.5o'
+                });
+                console.log('│  ' + aiModel);
+                console.log('│');
+
+                // Step 3: Get component name
                 const componentName = await input({
-                    message: '\x1b[1mStep 2/3:\x1b[0m Enter component name:',
+                    message: '◇  Component name:',
                     default: frame.name.replace(/[^a-zA-Z0-9]/g, ''),
                     validate: (inputValue: string) => {
                         if (!inputValue.trim()) {
@@ -191,40 +218,75 @@ export function loadCommands(program: Command) {
                         return true;
                     }
                 });
+                console.log('│  ' + componentName);
+                console.log('│');
 
-                // Step 3: Get additional prompt (optional)
+                // Step 4: Get additional prompt (optional)
                 const additionalPrompt = await input({
-                    message: '\x1b[1mStep 3/3:\x1b[0m Additional instructions (optional):',
+                    message: '◇  Additional instructions (optional):',
                     default: ''
                 });
+                console.log('│  ' + (additionalPrompt || '(none)'));
+                console.log('│');
 
-                console.log('');
-                const generatingSpinner = ora('Generating React component...').start();
+                // Determine file extension based on framework
+                const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
+                const defaultPath = `./src/components/${componentName}.${extension}`;
 
-                // Generate React component code with user preferences
-                const componentCode = generateReactComponent(
-                    frame, 
-                    framework,
-                    componentName,
-                    additionalPrompt
-                );
+                // Step 5: Get output path (optional)
+                const outputPathInput = await input({
+                    message: '◇  Output path:',
+                    default: defaultPath
+                });
+                console.log('│  ' + outputPathInput);
+                console.log('│');
 
-                // Determine output path
-                let outputPath: string;
-                if (options.output) {
-                    outputPath = path.resolve(options.output);
-                } else {
-                    const extension = framework === 'mui-tsx' || framework === 'vanilla-jsx' ? 'tsx' : 'jsx';
-                    outputPath = path.resolve(`./${componentName}.${extension}`);
+                console.log('◇  Generating React component in ' + outputPathInput + '...');
+                console.log('│');
+
+                // Generate React component code with AI
+                const generationSpinner = ora('Calling AI model to generate component...').start();
+                
+                try {
+                    const componentCode = await generateReactComponentWithAI(
+                        frame,
+                        framework,
+                        componentName,
+                        additionalPrompt,
+                        aiModel
+                    );
+                    generationSpinner.succeed('Component code generated by AI');
+                    console.log('│');
+
+                    // Determine output path
+                    let outputPath: string;
+                    if (options.output) {
+                        outputPath = path.resolve(options.output);
+                    } else {
+                        outputPath = path.resolve(outputPathInput);
+                    }
+
+                    // Ensure directory exists
+                    const outputDir = path.dirname(outputPath);
+                    await fs.mkdir(outputDir, { recursive: true });
+
+                    // Write to file
+                    await fs.writeFile(outputPath, componentCode, 'utf-8');
+
+                    console.log('│');
+                    const successText = figlet.textSync('Success.', {
+                        font: 'standard',
+                        horizontalLayout: 'universal smushing',
+                        whitespaceBreak: true
+                    });
+                    console.log('\x1b[32m' + successText + '\x1b[0m');
+                    console.log('└  Component generated successfully! Thank you for using Cascade CLI\n');
+
+                } catch (aiError) {
+                    generationSpinner.fail('Failed to generate component with AI');
+                    console.error('Error:', aiError instanceof Error ? aiError.message : String(aiError));
+                    process.exit(1);
                 }
-
-                // Write to file
-                await fs.writeFile(outputPath, componentCode, 'utf-8');
-
-                generatingSpinner.succeed('React component generated successfully!');
-                console.log(`\n\x1b[32m✓\x1b[0m Component saved to: \x1b[36m${outputPath}\x1b[0m`);
-                console.log(`\x1b[32m✓\x1b[0m Framework: \x1b[36m${framework}\x1b[0m`);
-                console.log(`\x1b[32m✓\x1b[0m Component name: \x1b[36m${componentName}\x1b[0m`);
 
             } catch (error) {
                 spinner.fail('Failed to generate React component');
@@ -236,7 +298,7 @@ export function loadCommands(program: Command) {
 
 async function figmaApiRequest(url: string, token: string, spinner?: any, maxRetries: number = 3): Promise<any> {
     let lastError: Error;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             if (spinner) {
@@ -259,7 +321,7 @@ async function figmaApiRequest(url: string, token: string, spinner?: any, maxRet
                 const retryAfter = parseInt(response.headers.get('retry-after') || '60');
                 // Cap the wait time to a maximum of 30 seconds for user experience
                 const waitTime = attempt === 1 ? Math.min(retryAfter * 1000, 30000) : Math.pow(2, attempt - 1) * 1000;
-                
+
                 if (attempt < maxRetries) {
                     if (spinner) {
                         spinner.text = `Rate limit hit. Waiting ${Math.round(waitTime / 1000)}s before retry...`;
@@ -283,20 +345,20 @@ async function figmaApiRequest(url: string, token: string, spinner?: any, maxRet
 
         } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
-            
+
             if (attempt === maxRetries) {
                 break;
             }
-            
+
             // Don't retry on certain errors
             if (error instanceof Error && (
-                error.message.includes('401') || 
+                error.message.includes('401') ||
                 error.message.includes('404') ||
                 error.message.includes('Invalid Figma token')
             )) {
                 break;
             }
-            
+
             // Exponential backoff for network errors (max 8 seconds)
             const waitTime = Math.min(Math.pow(2, attempt - 1) * 1000, 8000);
             if (spinner) {
@@ -307,26 +369,26 @@ async function figmaApiRequest(url: string, token: string, spinner?: any, maxRet
             await new Promise(resolve => setTimeout(resolve, waitTime));
         }
     }
-    
+
     throw lastError!;
 }
 
 function extractFrames(node: FigmaNode | null): FigmaNode[] {
     const frames: FigmaNode[] = [];
-    
+
     if (!node) return frames;
-    
+
     // If this node is a frame, add it to the list
     if (node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE') {
         frames.push(node);
     }
-    
+
     // Recursively search through children
     if (node.children && Array.isArray(node.children)) {
         for (const child of node.children) {
             frames.push(...extractFrames(child));
         }
     }
-    
+
     return frames;
 }

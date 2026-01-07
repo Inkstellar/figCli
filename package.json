@@ -1,6 +1,6 @@
 {
   "name": "figcli",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A powerful CLI tool for GitHub API interactions built with TypeScript",
   "main": "dist/index.js",
   "bin": {
@@ -8,6 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "publish": "npm publish",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -24,12 +26,16 @@
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1",
+    "@types/figlet": "^1.7.0",
     "@types/inquirer": "^9.0.9",
     "@types/node-fetch": "^2.6.13",
     "@types/ora": "^3.1.0",
     "commander": "^14.0.2",
+    "figcli": "^1.0.1",
+    "figlet": "^1.9.4",
     "inquirer": "^13.1.0",
     "node-fetch": "^3.3.2",
+    "openai": "^6.15.0",
     "ora": "^9.0.0"
   }
 }

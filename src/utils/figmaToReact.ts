@@ -31,6 +31,98 @@ interface FigmaNode {
     opacity?: number;
 }
 
+export async function generateReactComponentWithAI(
+    figmaNode: FigmaNode,
+    framework: string,
+    componentName: string,
+    additionalPrompt: string,
+    aiModel: string
+): Promise<string> {
+    const systemPrompt = `You are an expert React developer specializing in converting Figma designs to production-ready React components. 
+Generate clean, maintainable, and properly typed React components based on Figma design data.
+
+Framework preferences:
+- mui-tsx: Use Material-UI (MUI) with TypeScript
+- mui-jsx: Use Material-UI (MUI) with JavaScript
+- vanilla-jsx: Use plain React with inline styles (TypeScript)
+- styled-components: Use styled-components library
+
+Important guidelines:
+1. Generate ONLY the component code, no explanations
+2. Use proper TypeScript types when applicable
+3. Follow React best practices
+4. Use semantic HTML
+5. Implement responsive design where appropriate
+6. Match the Figma design's layout, spacing, colors, and typography as closely as possible
+7. Use flexbox/grid for layouts that have auto-layout properties
+8. Extract reusable styles and patterns`;
+
+    const userPrompt = `Convert this Figma component to a React component:
+
+Component Name: ${componentName}
+Framework: ${framework}
+
+Figma Component Data:
+${JSON.stringify(figmaNode, null, 2)}
+
+${additionalPrompt ? `Additional Requirements:\n${additionalPrompt}\n` : ''}
+
+Generate a complete, production-ready React component. Include all necessary imports and proper structure.`;
+
+    try {
+        const response = await fetch('http://localhost:5000/api/proxy/openai', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: aiModel,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+                temperature: 0.7,
+                max_tokens: 4000,
+                username: 'cascade-cli-user',
+                playbook_id: null,
+            }),
+        });
+
+        if (!response.ok) {
+            let errorData: any = {};
+            try { 
+                errorData = await response.json(); 
+            } catch { 
+                /* ignore parse errors */ 
+            }
+            const parts = [
+                errorData.message || `Upstream error ${response.status} ${response.statusText}`,
+                errorData.activityId ? `activityId: ${errorData.activityId}` : null,
+            ].filter(Boolean);
+            throw new Error(parts.join(' | '));
+        }
+
+        const data = await response.json();
+
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+            throw new Error('Invalid response from AI model');
+        }
+
+        let componentCode = data.choices[0].message.content || '';
+
+        // Extract code from markdown code blocks if present
+        const codeBlockMatch = componentCode.match(/```(?:typescript|tsx|jsx|javascript)?\n([\s\S]*?)\n```/);
+        if (codeBlockMatch) {
+            componentCode = codeBlockMatch[1];
+        }
+
+        return componentCode.trim();
+
+    } catch (error) {
+        throw new Error(`Failed to generate component with AI: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
 function sanitizeComponentName(name: string): string {
     // Convert to PascalCase and remove invalid characters
     return name
